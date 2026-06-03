@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
@@ -25,6 +25,9 @@ try:
     df_ventas = st.session_state.df_ventas
     df_insumos = st.session_state.df_insumos
 
+    # Forzado de tipos numéricos para evitar que Sheets rompa la matemática
+    if not df_libros.empty:
+        df_libros["Costo Adquisición"] = pd.to_numeric(df_libros["Costo Adquisición"], errors='coerce').fillna(0)
     if not df_insumos.empty:
         df_insumos["Cantidad Comprada"] = pd.to_numeric(df_insumos["Cantidad Comprada"], errors='coerce').fillna(0)
         df_insumos["Costo Total"] = pd.to_numeric(df_insumos["Costo Total"], errors='coerce').fillna(0)
@@ -41,8 +44,6 @@ except Exception as e:
 
 # ==================== PANEL LATERAL: RECETA Y CONFIGURACIÓN ====================
 st.sidebar.title("🛸 Comando Lateral")
-
-# NUEVO: Tablero de Mando como la primera opción de la lista
 menu = st.sidebar.radio("Navegación", [
     "📊 Tablero de Mando", 
     "🛒 Registrar Venta", 
@@ -86,36 +87,53 @@ cafes_maximos_disponibles = min(posibles_por_cafe, posibles_por_vasos)
 # ==================== PANTALLA 0: TABLERO DE MANDO ====================
 if menu == "📊 Tablero de Mando":
     st.title("🚀 Vostok — Radar Principal")
-    st.write("Visión general de las métricas de la nave.")
+    st.write("Visión general financiera y operativa en tiempo real.")
     st.markdown("---")
     
-    if df_ventas.empty:
-        st.info("Todavía no hay ventas registradas en la bitácora, capitán. ¡A salir a la calle!")
+    # 1. MÉTRICAS DIARIAS (FILTRADO POR HOY)
+    hoy_str = datetime.now().strftime("%Y-%m-%d")
+    df_hoy = df_ventas[df_ventas["Fecha"].str.startswith(hoy_str, na=False)] if not df_ventas.empty else pd.DataFrame()
+    
+    st.markdown("### 🌊 Actividad de Hoy en la Rambla")
+    col_h1, col_h2, col_h3 = st.columns(3)
+    
+    if not df_hoy.empty:
+        bruto_hoy = df_hoy["Total Cobrado"].sum()
+        ganancia_hoy = df_hoy["Ganancia Real"].sum()
+        cafes_hoy = df_hoy["Cantidad Cafés"].sum()
+        col_h1.metric("Ingreso Hoy", f"$U {bruto_hoy:,.0f}")
+        col_h2.metric("Ganancia Limpia Hoy", f"$U {ganancia_hoy:,.0f}")
+        col_h3.metric("Cafés Servidos Hoy", f"{cafes_hoy:.0f} tazas")
     else:
-        # Cálculos de guita
-        ingreso_bruto = df_ventas["Total Cobrado"].sum()
-        costo_recuperacion = df_ventas["Costo Total"].sum()
-        ganancia_neta = df_ventas["Ganancia Real"].sum()
+        col_h1.metric("Ingreso Hoy", "$U 0")
+        col_h2.metric("Ganancia Limpia Hoy", "$U 0")
+        col_h3.metric("Cafés Servidos Hoy", "0 tazas")
         
-        st.markdown("### 💰 Estado de Caja Histórico")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Ingreso Bruto", f"$U {ingreso_bruto:,.0f}")
-        col2.metric("Costos (A recuperar)", f"$U {costo_recuperacion:,.0f}")
-        col3.metric("Ganancia Neta (Limpia)", f"$U {ganancia_neta:,.0f}")
-        
-        st.markdown("---")
-        
-        # Cálculos de volumen (Función simple para contar comas y saber cuántos libros se vendieron)
-        def contar_libros(texto):
-            if pd.isna(texto) or str(texto).strip() == "": return 0
-            return len(str(texto).split(","))
-            
-        total_libros_vendidos = sum(contar_libros(row["Libros Vendidos"]) for _, row in df_ventas.iterrows())
-        
-        st.markdown("### 📦 Volumen de Misión")
-        col4, col5 = st.columns(2)
-        col4.metric("☕ Cafés Servidos", f"{total_cafes_vendidos:,.0f} tazas")
-        col5.metric("📚 Libros Despachados", f"{total_libros_vendidos} unidades")
+    st.markdown("---")
+    
+    # 2. METRICAS DE FLUJO DE CAJA REAL (CONSIDERANDO REINVERSIÓN)
+    st.markdown("### 💰 Flujo de Caja Total (Billetera Real)")
+    
+    ingreso_bruto_total = df_ventas["Total Cobrado"].sum() if not df_ventas.empty else 0
+    gasto_total_insumos = df_insumos["Costo Total"].sum() if not df_insumos.empty else 0
+    gasto_total_libros = df_libros["Costo Adquisición"].sum() if not df_libros.empty else 0
+    
+    # Egresos reales = Todo lo que compraste para el stock (vendido o no)
+    inversion_total_real = gasto_total_insumos + gasto_total_libros
+    billetera_real = ingreso_bruto_total - inversion_total_real
+    
+    col_t1, col_t2, col_t3 = st.columns(3)
+    col_t1.metric("Ventas Totales (Ingreso)", f"$U {ingreso_bruto_total:,.0f}")
+    col_t2.metric("Inversión en Stock", f"$U {inversion_total_real:,.0f}", help="Suma de todas las compras de insumos + costo de adquisición de todos los libros ingresados.")
+    col_t3.metric("Plata en Billetera", f"$U {billetera_real:,.0f}", help="Dinero real que deberías tener en la caja considerando las compras de stock nuevo.")
+    
+    st.markdown("---")
+    
+    # Guardamos la matemática contable en un rincón por si querés ver el rendimiento puro de lo vendido
+    with st.expander("📊 Rendimiento Contable (Solo margen de productos vendidos)"):
+        ganancia_contable_total = df_ventas["Ganancia Real"].sum() if not df_ventas.empty else 0
+        st.metric("Ganancia Acumulada Teórica", f"$U {ganancia_contable_total:,.0f}")
+        st.caption("Esta métrica solo resta el costo de las unidades que efectivamente ya vendiste, ignorando la plata que tenés parada en stock.")
 
 
 # ==================== PANTALLA 1: REGISTRAR VENTA ====================
@@ -133,15 +151,16 @@ elif menu == "🛒 Registrar Venta":
     
     libros_disponibles = df_libros[df_libros["Estado"] == "🟢 En Órbita"] if not df_libros.empty else pd.DataFrame()
     
+    # SOLUCIÓN BUSCADOR: Sumamos el Autor a la etiqueta para usar la barra como biblioteca de consulta
     opciones_libros = {}
     if not libros_disponibles.empty:
         opciones_libros = {
-            f"[{row['ID Libro']}] {row['Título']} - ${row['Precio Lista']}": row 
+            f"[{row['ID Libro']}] {row['Título']} - {row['Autor']} (${row['Precio Lista']})": row 
             for idx, row in libros_disponibles.iterrows()
         }
     
     libros_seleccionados = st.multiselect(
-        "Seleccioná los libros (podés escribir el código o título para buscar):",
+        "Seleccioná los libros (podés escribir el código, título o autor para buscar):",
         options=list(opciones_libros.keys()),
         key=f"w_libros_{st.session_state.form_reset}"
     )
