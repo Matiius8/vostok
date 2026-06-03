@@ -25,7 +25,6 @@ try:
     df_ventas = st.session_state.df_ventas
     df_insumos = st.session_state.df_insumos
 
-    # Forzado de tipos numéricos para evitar que Sheets rompa la matemática
     if not df_libros.empty:
         df_libros["Costo Adquisición"] = pd.to_numeric(df_libros["Costo Adquisición"], errors='coerce').fillna(0)
     if not df_insumos.empty:
@@ -111,29 +110,32 @@ if menu == "📊 Tablero de Mando":
         
     st.markdown("---")
     
-    # 2. METRICAS DE FLUJO DE CAJA REAL (CONSIDERANDO REINVERSIÓN)
-    st.markdown("### 💰 Flujo de Caja Total (Billetera Real)")
+    # 2. METRICAS DE BILLETERA Y STOCK FÍSICO (NUEVA LÓGICA)
+    st.markdown("### 💰 Finanzas y Capital")
     
+    # Capital Inmovilizado: Costo de lo que está físicamente sin vender
+    capital_libros = df_libros[df_libros["Estado"] == "🟢 En Órbita"]["Costo Adquisición"].sum() if not df_libros.empty else 0
+    capital_cafe = stock_actual_cafe_g * costo_gramo_cafe
+    capital_vasos = stock_actual_vasos * costo_vaso_unidad
+    capital_inmovilizado_total = capital_libros + capital_cafe + capital_vasos
+
+    # Flujo de Caja Billetera: (Todo lo cobrado) - (Todo lo gastado históricamente en libros e insumos)
     ingreso_bruto_total = df_ventas["Total Cobrado"].sum() if not df_ventas.empty else 0
     gasto_total_insumos = df_insumos["Costo Total"].sum() if not df_insumos.empty else 0
     gasto_total_libros = df_libros["Costo Adquisición"].sum() if not df_libros.empty else 0
-    
-    # Egresos reales = Todo lo que compraste para el stock (vendido o no)
-    inversion_total_real = gasto_total_insumos + gasto_total_libros
-    billetera_real = ingreso_bruto_total - inversion_total_real
+    billetera_efectivo = ingreso_bruto_total - (gasto_total_insumos + gasto_total_libros)
     
     col_t1, col_t2, col_t3 = st.columns(3)
-    col_t1.metric("Ventas Totales (Ingreso)", f"$U {ingreso_bruto_total:,.0f}")
-    col_t2.metric("Inversión en Stock", f"$U {inversion_total_real:,.0f}", help="Suma de todas las compras de insumos + costo de adquisición de todos los libros ingresados.")
-    col_t3.metric("Plata en Billetera", f"$U {billetera_real:,.0f}", help="Dinero real que deberías tener en la caja considerando las compras de stock nuevo.")
+    col_t1.metric("Ventas Históricas (Bruto)", f"$U {ingreso_bruto_total:,.0f}")
+    col_t2.metric("Capital Inmovilizado (Stock)", f"$U {capital_inmovilizado_total:,.0f}", help="El valor al costo de los libros disponibles y los insumos que te quedan sin usar.")
+    col_t3.metric("Billetera Real (Liquidez)", f"$U {billetera_efectivo:,.0f}", help="Plata en efectivo: Ingresos menos todo lo que invertiste en la historia del proyecto.")
     
     st.markdown("---")
     
-    # Guardamos la matemática contable en un rincón por si querés ver el rendimiento puro de lo vendido
-    with st.expander("📊 Rendimiento Contable (Solo margen de productos vendidos)"):
+    with st.expander("📊 Rendimiento Contable Pura (Margen de lo vendido)"):
         ganancia_contable_total = df_ventas["Ganancia Real"].sum() if not df_ventas.empty else 0
-        st.metric("Ganancia Acumulada Teórica", f"$U {ganancia_contable_total:,.0f}")
-        st.caption("Esta métrica solo resta el costo de las unidades que efectivamente ya vendiste, ignorando la plata que tenés parada en stock.")
+        st.metric("Ganancia Neta Teórica", f"$U {ganancia_contable_total:,.0f}")
+        st.caption("Esta métrica refleja la ganancia solo de las ventas realizadas, ignorando el gasto de los libros que aún no vendiste.")
 
 
 # ==================== PANTALLA 1: REGISTRAR VENTA ====================
@@ -151,7 +153,6 @@ elif menu == "🛒 Registrar Venta":
     
     libros_disponibles = df_libros[df_libros["Estado"] == "🟢 En Órbita"] if not df_libros.empty else pd.DataFrame()
     
-    # SOLUCIÓN BUSCADOR: Sumamos el Autor a la etiqueta para usar la barra como biblioteca de consulta
     opciones_libros = {}
     if not libros_disponibles.empty:
         opciones_libros = {
@@ -244,30 +245,40 @@ elif menu == "📚 Cargar Libro":
     st.subheader("📥 Cargar Libro al Inventario")
     
     with st.form("nuevo_libro_form", clear_on_submit=True):
-        id_libro = st.text_input("ID único del Libro (Ej: VS-001):")
+        id_libro = st.text_input("ID único base (Ej: VS-001):")
         titulo = st.text_input("Título del Libro:")
         autor = st.text_input("Autor:")
         genero = st.selectbox("Género:", ["Science Fiction", "Narrativa Local", "Misterio/Suspenso", "Otros"])
         
-        costo = st.number_input("Costo de Adquisición ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 150")
-        precio = st.number_input("Precio de Lista al Público ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 450")
+        # NUEVO: Selector de ejemplares múltiples
+        cantidad_ejemplares = st.number_input("Cantidad de ejemplares comprados:", min_value=1, step=1, value=1)
         
-        submit = st.form_submit_button("🛰️ Lanzar libro a Órbita")
+        costo = st.number_input("Costo de Adquisición C/U ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 150")
+        precio = st.number_input("Precio de Lista al Público C/U ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 450")
+        
+        submit = st.form_submit_button("🛰️ Lanzar a Órbita")
         
         if submit:
+            # Chequeamos los IDs que se van a crear
+            ids_a_crear = [id_libro] if cantidad_ejemplares == 1 else [f"{id_libro}-{i+1}" for i in range(int(cantidad_ejemplares))]
+            
             if not id_libro or not titulo or costo is None or precio is None:
-                st.error("Faltan datos obligatorios para el lanzamiento (ID, Título, Costo o Precio).")
-            elif not df_libros.empty and id_libro in df_libros["ID Libro"].values:
-                st.error("Ese ID ya existe en la base.")
+                st.error("Faltan datos obligatorios para el lanzamiento.")
+            elif not df_libros.empty and any(id_new in df_libros["ID Libro"].values for id_new in ids_a_crear):
+                st.error("Uno de los IDs generados ya existe. Cambiá el código base.")
             else:
-                nuevo_registro = {
-                    "ID Libro": id_libro, "Título": titulo, "Autor": autor, "Género": genero,
-                    "Estado": "🟢 En Órbita", "Costo Adquisición": costo, "Precio Lista": precio
-                }
-                df_libros = pd.concat([df_libros, pd.DataFrame([nuevo_registro])], ignore_index=True)
+                nuevos_registros = []
+                for i in range(int(cantidad_ejemplares)):
+                    id_final = id_libro if cantidad_ejemplares == 1 else f"{id_libro}-{i+1}"
+                    nuevos_registros.append({
+                        "ID Libro": id_final, "Título": titulo, "Autor": autor, "Género": genero,
+                        "Estado": "🟢 En Órbita", "Costo Adquisición": costo, "Precio Lista": precio
+                    })
+                    
+                df_libros = pd.concat([df_libros, pd.DataFrame(nuevos_registros)], ignore_index=True)
                 conn.update(worksheet="Libros", data=df_libros)
                 del st.session_state.df_libros
-                st.success(f"¡{titulo} listo en órbita!")
+                st.success(f"¡{cantidad_ejemplares} ejemplar(es) de '{titulo}' listo(s) en órbita!")
 
 # ==================== PANTALLA 3: REGISTRAR COMPRA DE INSUMOS ====================
 elif menu == "📦 Compras de Insumos":
