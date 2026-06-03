@@ -3,10 +3,9 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# Configuración de la página - Modo Cápsula Espacial
+# Configuración de la página
 st.set_page_config(page_title="Vostok Control", page_icon="🚀", layout="centered")
 
-# Truco maestro para forzar la limpieza visual de los formularios
 if "form_reset" not in st.session_state:
     st.session_state.form_reset = 0
 
@@ -28,7 +27,6 @@ try:
     df_insumos = st.session_state.df_insumos
     df_gastos = st.session_state.df_gastos
 
-    # Forzado de tipos numéricos
     if not df_libros.empty:
         df_libros["Costo Adquisición"] = pd.to_numeric(df_libros["Costo Adquisición"], errors='coerce').fillna(0)
     if not df_insumos.empty:
@@ -61,9 +59,11 @@ st.sidebar.markdown("---")
 
 with st.sidebar.expander("📐 Configurar Receta y Precio"):
     PRECIO_CAFE_LISTA = st.number_input("Precio de Venta Café ($U):", value=130, step=10)
-    st.markdown("**Porciones por taza:**")
     RECETA_CAFE_G = st.number_input("Gramos de Café (g):", value=15, step=1)
     RECETA_VASOS = st.number_input("Cantidad de Vasos:", value=1, step=1)
+
+with st.sidebar.expander("🚀 Capital Activo Fijo"):
+    VALOR_NAVE = st.number_input("Valor de la Nave (Moto, equipos, etc) $U:", value=0, step=1000, help="Esto suma directo a tu patrimonio total.")
 
 # ==================== ALGORITMO DE MATEMÁTICA INTERNA ====================
 def calcular_costo_unitario(df, palabra_clave):
@@ -75,7 +75,6 @@ def calcular_costo_unitario(df, palabra_clave):
 
 costo_gramo_cafe = calcular_costo_unitario(df_insumos, "caf")
 costo_vaso_unidad = calcular_costo_unitario(df_insumos, "vaso")
-
 COSTO_INSUMO_CAFE = (RECETA_CAFE_G * costo_gramo_cafe) + (RECETA_VASOS * costo_vaso_unidad)
 
 total_cafes_vendidos = df_ventas["Cantidad Cafés"].sum() if not df_ventas.empty else 0
@@ -93,7 +92,7 @@ cafes_maximos_disponibles = min(posibles_por_cafe, posibles_por_vasos)
 # ==================== PANTALLA 0: TABLERO DE MANDO ====================
 if menu == "📊 Tablero de Mando":
     st.title("🚀 Vostok — Radar Principal")
-    st.write("Visión general financiera y operativa en tiempo real.")
+    st.write("Finanzas reales al estilo Vostok.")
     st.markdown("---")
     
     # 1. MÉTRICAS DIARIAS
@@ -102,63 +101,65 @@ if menu == "📊 Tablero de Mando":
     
     st.markdown("### 🌊 Actividad de Hoy")
     col_h1, col_h2, col_h3 = st.columns(3)
-    
     if not df_hoy.empty:
-        bruto_hoy = df_hoy["Total Cobrado"].sum()
-        ganancia_hoy = df_hoy["Ganancia Real"].sum()
-        cafes_hoy = df_hoy["Cantidad Cafés"].sum()
-        col_h1.metric("Ingreso Hoy", f"$U {bruto_hoy:,.0f}")
-        col_h2.metric("Ganancia Limpia Hoy", f"$U {ganancia_hoy:,.0f}")
-        col_h3.metric("Cafés Servidos Hoy", f"{cafes_hoy:.0f} tazas")
+        col_h1.metric("Ingreso Hoy", f"$U {df_hoy['Total Cobrado'].sum():,.0f}")
+        col_h2.metric("Ganancia Limpia Hoy", f"$U {df_hoy['Ganancia Real'].sum():,.0f}")
+        col_h3.metric("Cafés Servidos", f"{df_hoy['Cantidad Cafés'].sum():.0f} tazas")
     else:
         col_h1.metric("Ingreso Hoy", "$U 0")
         col_h2.metric("Ganancia Limpia Hoy", "$U 0")
-        col_h3.metric("Cafés Servidos Hoy", "0 tazas")
+        col_h3.metric("Cafés Servidos", "0 tazas")
         
     st.markdown("---")
 
-    # 2. GRÁFICO DE VENTAS (Reemplaza al histórico bruto)
-    st.markdown("### 📈 Tendencia de Ingresos")
+    # 2. GRÁFICO DE VENTAS
+    st.markdown("### 📈 Evolución Diaria")
     if not df_ventas.empty:
         df_grafico = df_ventas.copy()
-        # Extraemos solo el día para agrupar
         df_grafico["Día"] = df_grafico["Fecha"].str[:10]
         ventas_por_dia = df_grafico.groupby("Día")["Total Cobrado"].sum()
         st.bar_chart(ventas_por_dia, color="#FF4B4B")
     else:
-        st.info("No hay datos suficientes para graficar todavía.")
+        st.info("Sin ventas para graficar.")
 
     st.markdown("---")
     
-    # 3. METRICAS DE BILLETERA Y STOCK FÍSICO (CON GASTOS)
-    st.markdown("### 💰 Capital y Tesorería")
+    # 3. LÓGICA FINANCIERA REALISTA
+    st.markdown("### 💼 Tesorería y Patrimonio")
     
+    # Sumarizadores de Tesorería
+    ingresos_ventas = df_ventas["Total Cobrado"].sum() if not df_ventas.empty else 0
+    costos_ventas_hist = df_ventas["Costo Total"].sum() if not df_ventas.empty else 0
+    gastos_op = df_gastos[df_gastos["Tipo"].str.contains("Gasto Operativo")]["Monto"].sum() if not df_gastos.empty else 0
+    retiros = df_gastos[df_gastos["Tipo"].str.contains("Retiro")]["Monto"].sum() if not df_gastos.empty else 0
+    aportes = df_gastos[df_gastos["Tipo"].str.contains("Aporte")]["Monto"].sum() if not df_gastos.empty else 0
+    
+    inversion_insumos = df_insumos["Costo Total"].sum() if not df_insumos.empty else 0
+    inversion_libros = df_libros["Costo Adquisición"].sum() if not df_libros.empty else 0
+    
+    # EFECTIVO FÍSICO: (Aportes + Ventas) - (Todas las compras + Gastos + Retiros)
+    efectivo_caja = (aportes + ingresos_ventas) - (inversion_insumos + inversion_libros + gastos_op + retiros)
+    
+    # GANANCIA NETA DEL NEGOCIO: Ingresos por Ventas - Costo de lo Vendido - Gastos Operativos
+    ganancia_neta_negocio = ingresos_ventas - costos_ventas_hist - gastos_op
+    
+    # CAPITAL INMOVILIZADO
     capital_libros = df_libros[df_libros["Estado"] == "🟢 En Órbita"]["Costo Adquisición"].sum() if not df_libros.empty else 0
     capital_cafe = stock_actual_cafe_g * costo_gramo_cafe
     capital_vasos = stock_actual_vasos * costo_vaso_unidad
-    capital_inmovilizado_total = capital_libros + capital_cafe + capital_vasos
-
-    # Flujo histórico
-    ingreso_bruto_total = df_ventas["Total Cobrado"].sum() if not df_ventas.empty else 0
-    gasto_total_insumos = df_insumos["Costo Total"].sum() if not df_insumos.empty else 0
-    gasto_total_libros = df_libros["Costo Adquisición"].sum() if not df_libros.empty else 0
+    capital_stock = capital_libros + capital_cafe + capital_vasos
     
-    # Sumar Gastos operativos y Retiros
-    total_gastos_op = df_gastos[df_gastos["Tipo"] == "Gasto Operativo"]["Monto"].sum() if not df_gastos.empty else 0
-    total_retiros = df_gastos[df_gastos["Tipo"] == "Retiro de Gerencia"]["Monto"].sum() if not df_gastos.empty else 0
-    
-    # Billetera real = Entradas - (Compras de stock + Gastos de la nave + Retiros del jefe)
-    billetera_efectivo = ingreso_bruto_total - (gasto_total_insumos + gasto_total_libros + total_gastos_op + total_retiros)
+    patrimonio_total = efectivo_caja + capital_stock + VALOR_NAVE
     
     col_t1, col_t2 = st.columns(2)
-    col_t1.metric("Capital Inmovilizado (Stock Físico)", f"$U {capital_inmovilizado_total:,.0f}")
-    col_t2.metric("Plata Real en Billetera (Efectivo)", f"$U {billetera_efectivo:,.0f}")
+    col_t1.metric("💵 Efectivo en Caja", f"$U {efectivo_caja:,.0f}", help="La plata física que deberías tener en mano (o cuenta).")
+    col_t2.metric("📈 Ganancia Neta Global", f"$U {ganancia_neta_negocio:,.0f}", help="Rentabilidad real de la empresa (Ventas menos costos y gastos operativos).")
     
-    with st.expander("📋 Ver detalle de la billetera"):
-        st.write(f"🟢 **Entradas Totales:** $U {ingreso_bruto_total:,.0f}")
-        st.write(f"🔴 **Inversión en Stock:** -$U {gasto_total_insumos + gasto_total_libros:,.0f}")
-        st.write(f"🔴 **Gastos de Operación:** -$U {total_gastos_op:,.0f}")
-        st.write(f"🔴 **Retiros de Gerencia:** -$U {total_retiros:,.0f}")
+    st.markdown("#### Desglose de Capital")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Stock Físico", f"$U {capital_stock:,.0f}")
+    c2.metric("La Nave", f"$U {VALOR_NAVE:,.0f}")
+    c3.metric("🏆 PATRIMONIO TOTAL", f"$U {patrimonio_total:,.0f}")
 
 
 # ==================== PANTALLA 1: REGISTRAR VENTA ====================
@@ -175,30 +176,15 @@ elif menu == "🛒 Registrar Venta":
     st.markdown("---")
     
     libros_disponibles = df_libros[df_libros["Estado"] == "🟢 En Órbita"] if not df_libros.empty else pd.DataFrame()
-    
     opciones_libros = {}
     if not libros_disponibles.empty:
-        opciones_libros = {
-            f"[{row['ID Libro']}] {row['Título']} - {row['Autor']} (${row['Precio Lista']})": row 
-            for idx, row in libros_disponibles.iterrows()
-        }
+        opciones_libros = {f"[{row['ID Libro']}] {row['Título']} - {row['Autor']} (${row['Precio Lista']})": row for idx, row in libros_disponibles.iterrows()}
     
-    libros_seleccionados = st.multiselect(
-        "Seleccioná los libros (podés escribir el código, título o autor):",
-        options=list(opciones_libros.keys()),
-        key=f"w_libros_{st.session_state.form_reset}"
-    )
-    
-    cant_cafes = st.number_input(
-        "Cantidad de cafés entregados:", 
-        min_value=0, 
-        max_value=max(0, cafes_maximos_disponibles),
-        step=1,
-        key=f"w_cafes_{st.session_state.form_reset}"
-    )
+    libros_seleccionados = st.multiselect("Seleccioná los libros:", options=list(opciones_libros.keys()), key=f"w_libros_{st.session_state.form_reset}")
+    cant_cafes = st.number_input("Cantidad de cafés entregados:", min_value=0, max_value=max(0, cafes_maximos_disponibles), step=1, key=f"w_cafes_{st.session_state.form_reset}")
     
     if cafes_maximos_disponibles == 0:
-        st.error("⚠️ ¡Alerta! Sin insumos suficientes en los tanques para preparar café.")
+        st.error("⚠️ ¡Alerta! Sin insumos suficientes.")
 
     st.markdown("---")
     
@@ -226,9 +212,9 @@ elif menu == "🛒 Registrar Venta":
     st.metric(label="TOTAL A COBRAR", value=f"$U {total_a_cobrar:.0f}")
     st.caption(f"Detalle: {cant_libros} libro(s) y {cant_cafes} café(s) ({cafes_gratis} en promo / {cafes_cobrados} cobrados)")
     
-    with st.expander("📊 Datos de Comandancia (Oculto al cliente)", expanded=False):
+    with st.expander("📊 Datos de Comandancia (Oculto al cliente)"):
         st.metric(label="Ganancia Real (Limpia)", value=f"$U {ganancia_real:.2f}")
-        st.write(f"• Costo real calculado por taza: $U {COSTO_INSUMO_CAFE:.2f}")
+        st.write(f"• Costo por taza: $U {COSTO_INSUMO_CAFE:.2f}")
     
     st.markdown("---")
     
@@ -253,12 +239,9 @@ elif menu == "🛒 Registrar Venta":
                 
                 conn.update(worksheet="Libros", data=df_libros)
                 conn.update(worksheet="Ventas", data=df_ventas)
-                
                 del st.session_state.df_libros
                 del st.session_state.df_ventas
                 st.session_state.form_reset += 1
-                
-                st.toast("¡Venta registrada con éxito!")
                 st.rerun()
 
 # ==================== PANTALLA 2: CARGAR STOCK LIBROS ====================
@@ -271,97 +254,75 @@ elif menu == "📚 Cargar Libro":
         titulo = st.text_input("Título del Libro:")
         autor = st.text_input("Autor:")
         genero = st.selectbox("Género:", ["Science Fiction", "Narrativa Local", "Misterio/Suspenso", "Otros"])
-        
-        cantidad_ejemplares = st.number_input("Cantidad de ejemplares comprados:", min_value=1, step=1, value=1)
-        
+        cantidad_ejemplares = st.number_input("Cantidad de ejemplares:", min_value=1, step=1, value=1)
         costo = st.number_input("Costo de Adquisición C/U ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 150")
-        precio = st.number_input("Precio de Lista al Público C/U ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 450")
+        precio = st.number_input("Precio de Lista C/U ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 450")
         
         submit = st.form_submit_button("🛰️ Lanzar a Órbita")
         
         if submit:
             ids_a_crear = [id_libro] if cantidad_ejemplares == 1 else [f"{id_libro}-{i+1}" for i in range(int(cantidad_ejemplares))]
-            
             if not id_libro or not titulo or costo is None or precio is None:
-                st.error("Faltan datos obligatorios para el lanzamiento.")
+                st.error("Faltan datos obligatorios.")
             elif not df_libros.empty and any(id_new in df_libros["ID Libro"].values for id_new in ids_a_crear):
-                st.error("Uno de los IDs generados ya existe. Cambiá el código base.")
+                st.error("ID existente. Cambiá el código base.")
             else:
                 nuevos_registros = []
                 for i in range(int(cantidad_ejemplares)):
                     id_final = id_libro if cantidad_ejemplares == 1 else f"{id_libro}-{i+1}"
-                    nuevos_registros.append({
-                        "ID Libro": id_final, "Título": titulo, "Autor": autor, "Género": genero,
-                        "Estado": "🟢 En Órbita", "Costo Adquisición": costo, "Precio Lista": precio
-                    })
-                    
+                    nuevos_registros.append({"ID Libro": id_final, "Título": titulo, "Autor": autor, "Género": genero, "Estado": "🟢 En Órbita", "Costo Adquisición": costo, "Precio Lista": precio})
                 df_libros = pd.concat([df_libros, pd.DataFrame(nuevos_registros)], ignore_index=True)
                 conn.update(worksheet="Libros", data=df_libros)
                 del st.session_state.df_libros
-                st.success(f"¡{cantidad_ejemplares} ejemplar(es) de '{titulo}' listo(s) en órbita!")
+                st.success("¡Libro(s) en órbita!")
 
 # ==================== PANTALLA 3: REGISTRAR COMPRA DE INSUMOS ====================
 elif menu == "📦 Compras de Insumos":
     st.title("🚀 Vostok — Reabastecimiento")
-    st.subheader("🛒 Registrar Compra de Insumos/Materia Prima")
+    st.subheader("🛒 Registrar Insumos (Solo componentes directos del café)")
+    st.caption("Aclaración: El azúcar, edulcorante o removedores cargalos en la pestaña Tesorería como Gasto Operativo.")
     
     with st.form("nuevo_insumo_form", clear_on_submit=True):
         insumo_tipo = st.selectbox("Seleccioná el Insumo:", ["Café", "Vasos"])
-        
         cantidad = st.number_input("Cantidad comprada (g o unidades):", min_value=1, step=10, value=None, placeholder="Ej: 1000")
         unidad_texto = "g" if insumo_tipo == "Café" else "unidades"
-        costo_total_compra = st.number_input("Costo Total de la Compra ($U):", min_value=0.0, step=50.0, value=None, placeholder="Ej: 1200")
+        costo_total_compra = st.number_input("Costo Total ($U):", min_value=0.0, step=50.0, value=None, placeholder="Ej: 1200")
         
         submit_insumo = st.form_submit_button("📦 Guardar en bodega")
-        
         if submit_insumo:
             if cantidad is None or costo_total_compra is None:
-                st.error("Completá todos los campos numéricos, bo.")
+                st.error("Completá todos los números, bo.")
             else:
-                nueva_compra = {
-                    "Fecha": datetime.now().strftime("%Y-%m-%d"),
-                    "Insumo": insumo_tipo,
-                    "Cantidad Comprada": cantidad,
-                    "Unidad": unidad_texto,
-                    "Costo Total": costo_total_compra
-                }
-                
+                nueva_compra = {"Fecha": datetime.now().strftime("%Y-%m-%d"), "Insumo": insumo_tipo, "Cantidad Comprada": cantidad, "Unidad": unidad_texto, "Costo Total": costo_total_compra}
                 df_insumos = pd.concat([df_insumos, pd.DataFrame([nueva_compra])], ignore_index=True)
                 conn.update(worksheet="Insumos", data=df_insumos)
                 del st.session_state.df_insumos
-                st.success(f"¡Se registraron {cantidad} {unidad_texto} de {insumo_tipo} correctamente!")
+                st.success("¡Stock actualizado!")
                 st.rerun()
 
-# ==================== PANTALLA 4: TESORERÍA (NUEVO) ====================
+# ==================== PANTALLA 4: TESORERÍA ====================
 elif menu == "💸 Tesorería (Gastos y Retiros)":
     st.title("🚀 Vostok — Tesorería")
-    st.write("Registrá los gastos operativos de la nave o los retiros para uso personal.")
+    st.write("Registrá aportes, gastos varios y retiros.")
     
     with st.form("nuevo_gasto_form", clear_on_submit=True):
-        tipo_movimiento = st.radio("Tipo de Salida:", ["Gasto Operativo", "Retiro de Gerencia"])
+        tipo_movimiento = st.radio("Tipo de Movimiento:", [
+            "Aporte de Capital (Inyección de plata)",
+            "Gasto Operativo (Nafta, Azúcar, Remitos, etc.)", 
+            "Retiro de Gerencia"
+        ])
         
-        if tipo_movimiento == "Gasto Operativo":
-            descripcion = st.text_input("¿En qué se gastó? (Ej: Nafta, Patente, Agua):")
-        else:
-            descripcion = st.text_input("Motivo del retiro (Opcional, ej: 'Salida el finde'):")
-            
-        monto_salida = st.number_input("Monto total a descontar ($U):", min_value=0.0, step=100.0, value=None, placeholder="Ej: 1500")
+        descripcion = st.text_input("Detalle (Ej: 'Azúcar y vasos', 'Bolsillo'):")
+        monto_salida = st.number_input("Monto total ($U):", min_value=0.0, step=100.0, value=None, placeholder="Ej: 500")
         
-        submit_gasto = st.form_submit_button("💸 Registrar Salida")
-        
+        submit_gasto = st.form_submit_button("⚖️ Registrar Movimiento")
         if submit_gasto:
-            if monto_salida is None or (tipo_movimiento == "Gasto Operativo" and not descripcion):
-                st.error("El monto es obligatorio. Si es un gasto, la descripción también, bo.")
+            if monto_salida is None or not descripcion:
+                st.error("Faltan datos.")
             else:
-                nuevo_movimiento = {
-                    "Fecha": datetime.now().strftime("%Y-%m-%d"),
-                    "Tipo": tipo_movimiento,
-                    "Descripción": descripcion if descripcion else "Retiro de utilidades",
-                    "Monto": monto_salida
-                }
-                
+                nuevo_movimiento = {"Fecha": datetime.now().strftime("%Y-%m-%d"), "Tipo": tipo_movimiento, "Descripción": descripcion, "Monto": monto_salida}
                 df_gastos = pd.concat([df_gastos, pd.DataFrame([nuevo_movimiento])], ignore_index=True)
                 conn.update(worksheet="Gastos", data=df_gastos)
                 del st.session_state.df_gastos
-                st.success(f"¡Salida de $U {monto_salida} registrada correctamente en la caja!")
+                st.success("¡Caja actualizada!")
                 st.rerun()
