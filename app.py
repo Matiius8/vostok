@@ -93,24 +93,23 @@ cafes_maximos_disponibles = min(posibles_por_cafe, posibles_por_vasos)
 if menu == "📊 Tablero de Mando":
     st.title("🚀 Vostok — Radar Principal")
     
-    # 💥 INGENIERÍA 1: TERMÓMETRO DE BODEGA (ALERTAS DE REABASTECIMIENTO)
+    # 💥 INGENIERÍA 1: TERMÓMETRO DE BODEGA
     if stock_actual_cafe_g < 500 or stock_actual_vasos < 15:
         st.warning(f"⚠️ **¡ALERTA DE BODEGA BAJA!** Tanques en nivel crítico. Café restante: {stock_actual_cafe_g:.0f}g | Vasos: {stock_actual_vasos} un.")
         st.markdown("---")
 
-    # 💥 INGENIERÍA 2: FILTRO TEMPORAL INTEGRADO
+    # 💥 INGENIERÍA 2: FILTRO TEMPORAL INTEGRADO (ARREGLADO CON TO_DATETIME)
     st.markdown("### 📅 Período del Radar")
     filtro_tiempo = st.selectbox("Seleccioná qué misión evaluar:", ["Hoy", "Este Mes", "Histórico Total"])
     
-    hoy_str = datetime.now().strftime("%Y-%m-%d")
-    mes_str = datetime.now().strftime("%Y-%m")
+    now = datetime.now()
     
     if filtro_tiempo == "Hoy":
-        df_ventas_filt = df_ventas[df_ventas["Fecha"].str.startswith(hoy_str, na=False)] if not df_ventas.empty else pd.DataFrame()
-        df_gastos_filt = df_gastos[df_gastos["Fecha"].str.startswith(hoy_str, na=False)] if not df_gastos.empty else pd.DataFrame()
+        df_ventas_filt = df_ventas[pd.to_datetime(df_ventas["Fecha"], errors='coerce').dt.date == now.date()] if not df_ventas.empty else pd.DataFrame()
+        df_gastos_filt = df_gastos[pd.to_datetime(df_gastos["Fecha"], errors='coerce').dt.date == now.date()] if not df_gastos.empty else pd.DataFrame()
     elif filtro_tiempo == "Este Mes":
-        df_ventas_filt = df_ventas[df_ventas["Fecha"].str.startswith(mes_str, na=False)] if not df_ventas.empty else pd.DataFrame()
-        df_gastos_filt = df_gastos[df_gastos["Fecha"].str.startswith(mes_str, na=False)] if not df_gastos.empty else pd.DataFrame()
+        df_ventas_filt = df_ventas[(pd.to_datetime(df_ventas["Fecha"], errors='coerce').dt.month == now.month) & (pd.to_datetime(df_ventas["Fecha"], errors='coerce').dt.year == now.year)] if not df_ventas.empty else pd.DataFrame()
+        df_gastos_filt = df_gastos[(pd.to_datetime(df_gastos["Fecha"], errors='coerce').dt.month == now.month) & (pd.to_datetime(df_gastos["Fecha"], errors='coerce').dt.year == now.year)] if not df_gastos.empty else pd.DataFrame()
     else:
         df_ventas_filt = df_ventas
         df_gastos_filt = df_gastos
@@ -146,7 +145,7 @@ if menu == "📊 Tablero de Mando":
 
     st.markdown("---")
     
-    # 4. TESORERÍA, BALANCE SÓLIDO Y TOTALES REALES (Métricas de la billetera física actual)
+    # 4. TESORERÍA, BALANCE SÓLIDO Y TOTALES REALES
     st.markdown("### 💼 Caja Real y Patrimonio de la Nave")
     
     ingresos_ventas_totales = df_ventas["Total Cobrado"].sum() if not df_ventas.empty else 0
@@ -176,23 +175,32 @@ if menu == "📊 Tablero de Mando":
     col_int1, col_int2 = st.columns(2)
     
     with col_int1:
-        # 💥 INGENIERÍA 3: EL TOP 5 DE LA ÓRBITA (RANKING)
+        # 💥 INGENIERÍA 3: EL TOP 5 Y TOP GÉNEROS
         st.markdown("🏆 **Top 5 Libros Vendidos**")
         if not df_ventas.empty:
             lista_libros_todos = []
             for _, row in df_ventas.iterrows():
                 if pd.notna(row["Libros Vendidos"]) and str(row["Libros Vendidos"]).strip() != "":
                     lista_libros_todos.extend([b.strip() for b in str(row['Libros Vendidos']).split(",")])
+            
             if lista_libros_todos:
+                # Ranking de Títulos
                 df_ranking = pd.DataFrame(lista_libros_todos, columns=["Título"]).value_counts().reset_index(name="Ventas")
                 st.dataframe(df_ranking.head(5), hide_index=True, use_container_width=True)
+                
+                # Novedad: Ranking de Géneros
+                st.markdown("🎭 **Géneros más populares**")
+                dic_generos = dict(zip(df_libros["Título"], df_libros["Género"]))
+                lista_generos = [dic_generos.get(t, "Desconocido") for t in lista_libros_todos]
+                df_gen_ranking = pd.DataFrame(lista_generos, columns=["Género"]).value_counts().reset_index(name="Ventas")
+                st.dataframe(df_gen_ranking.head(3), hide_index=True, use_container_width=True)
             else:
                 st.caption("Sin libros vendidos para rankear.")
         else:
             st.caption("Sin ventas aún.")
             
     with col_int2:
-        # 💥 INGENIERÍA 4: TASA DE IMPACTO DEL CAFÉ (MÁRKETING DE COMBOS)
+        # 💥 INGENIERÍA 4: TASA DE IMPACTO DEL CAFÉ
         st.markdown("🎯 **Efectividad del Combo Café**")
         if not df_ventas.empty:
             total_cafes_hist = df_ventas["Cantidad Cafés"].sum()
@@ -218,7 +226,6 @@ if menu == "📊 Tablero de Mando":
     # 💥 INGENIERÍA 5: BITÁCORA DE LAS ÚLTIMAS 5 MISIONES
     st.markdown("📝 **Bitácora de las Últimas 5 Ventas**")
     if not df_ventas.empty:
-        # Mostramos las últimas ventas dadas vuelta (la más nueva primero)
         st.dataframe(df_ventas.iloc[::-1].head(5), hide_index=True, use_container_width=True)
     else:
         st.caption("Bitácora vacía por ahora.")
