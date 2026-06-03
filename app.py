@@ -6,11 +6,14 @@ from datetime import datetime
 # Configuración de la página - Modo Cápsula Espacial
 st.set_page_config(page_title="Vostok Control", page_icon="🚀", layout="centered")
 
+# Truco maestro para forzar la limpieza visual de los formularios
+if "form_reset" not in st.session_state:
+    st.session_state.form_reset = 0
+
 # ==================== CONEXIÓN CON GOOGLE SHEETS ====================
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Caché en 0m para que no te muestre fantasmas y siempre traiga lo último
     if "df_libros" not in st.session_state:
         st.session_state.df_libros = conn.read(worksheet="Libros", ttl="0m")
     if "df_ventas" not in st.session_state:
@@ -92,10 +95,11 @@ if menu == "🛒 Registrar Venta":
             for idx, row in libros_disponibles.iterrows()
         }
     
+    # Aplicamos el truco del contador al ID del casillero
     libros_seleccionados = st.multiselect(
         "Seleccioná los libros (podés escribir el código o título para buscar):",
         options=list(opciones_libros.keys()),
-        key="w_libros"
+        key=f"w_libros_{st.session_state.form_reset}"
     )
     
     cant_cafes = st.number_input(
@@ -103,7 +107,7 @@ if menu == "🛒 Registrar Venta":
         min_value=0, 
         max_value=max(0, cafes_maximos_disponibles),
         step=1,
-        key="w_cafes"
+        key=f"w_cafes_{st.session_state.form_reset}"
     )
     
     if cafes_maximos_disponibles == 0:
@@ -163,11 +167,12 @@ if menu == "🛒 Registrar Venta":
                 conn.update(worksheet="Libros", data=df_libros)
                 conn.update(worksheet="Ventas", data=df_ventas)
                 
-                # RESETEO SEGURO: Borramos los casilleros de la memoria sin reasignarlos.
-                claves_a_borrar = ["df_libros", "df_ventas", "w_libros", "w_cafes"]
-                for clave in claves_a_borrar:
-                    if clave in st.session_state:
-                        del st.session_state[clave]
+                # Borramos el caché de Google para que lea lo nuevo
+                del st.session_state.df_libros
+                del st.session_state.df_ventas
+                
+                # Aumentamos el contador: Streamlit se ve obligado a crear casilleros nuevos en blanco
+                st.session_state.form_reset += 1
                 
                 st.toast("¡Venta registrada con éxito!")
                 st.rerun()
@@ -183,7 +188,6 @@ elif menu == "📚 Cargar Libro":
         autor = st.text_input("Autor:")
         genero = st.selectbox("Género:", ["Science Fiction", "Narrativa Local", "Misterio/Suspenso", "Otros"])
         
-        # SIN CEROS: Cajas vacías con placeholder
         costo = st.number_input("Costo de Adquisición ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 150")
         precio = st.number_input("Precio de Lista al Público ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 450")
         
@@ -212,7 +216,6 @@ elif menu == "📦 Compras de Insumos":
     with st.form("nuevo_insumo_form", clear_on_submit=True):
         insumo_tipo = st.selectbox("Seleccioná el Insumo:", ["Café", "Vasos"])
         
-        # SIN CEROS
         cantidad = st.number_input("Cantidad comprada (g o unidades):", min_value=1, step=10, value=None, placeholder="Ej: 1000")
         unidad_texto = "g" if insumo_tipo == "Café" else "unidades"
         costo_total_compra = st.number_input("Costo Total de la Compra ($U):", min_value=0.0, step=50.0, value=None, placeholder="Ej: 1200")
