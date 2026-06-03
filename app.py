@@ -23,8 +23,9 @@ try:
     df_insumos = st.session_state.df_insumos
 except Exception as e:
     st.error(f"Error de conexión: {e}")
-    st.exception(e") # Esto nos va a mostrar el árbol del error entero en la pantalla
+    st.exception(e)  # CORREGIDO: Chau comilla extra
     st.stop()
+
 # ==================== PANEL LATERAL: RECETA Y CONFIGURACIÓN ====================
 st.sidebar.title("🛸 Comando Lateral")
 menu = st.sidebar.radio("Navegación", ["🛒 Registrar Venta", "📚 Cargar Libro", "📦 Compras de Insumos"])
