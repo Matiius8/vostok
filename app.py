@@ -163,11 +163,11 @@ if menu == "🛒 Registrar Venta":
                 conn.update(worksheet="Libros", data=df_libros)
                 conn.update(worksheet="Ventas", data=df_ventas)
                 
-                # Refrescamos la memoria forzando a cero el formulario de venta
-                del st.session_state.df_libros
-                del st.session_state.df_ventas
-                st.session_state["w_libros"] = []
-                st.session_state["w_cafes"] = 0
+                # RESETEO SEGURO: Borramos los casilleros de la memoria sin reasignarlos.
+                claves_a_borrar = ["df_libros", "df_ventas", "w_libros", "w_cafes"]
+                for clave in claves_a_borrar:
+                    if clave in st.session_state:
+                        del st.session_state[clave]
                 
                 st.toast("¡Venta registrada con éxito!")
                 st.rerun()
