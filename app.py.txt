@@ -19,6 +19,7 @@ try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     df_libros = conn.read(worksheet="Libros", ttl="0m")
     df_ventas = conn.read(worksheet="Ventas", ttl="0m")
+    df_insumos = conn.read(worksheet="Insumos", ttl="0m")
 except Exception as e:
     st.error("Error al conectar con Google Sheets. Revisá las credenciales en los Secrets de Streamlit.")
     st.stop()
