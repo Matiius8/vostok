@@ -111,6 +111,7 @@ if menu == "🛒 Registrar Venta":
                     
                     st.success("¡Venta registrada con éxito! Stock actualizado en el Google Sheet.")
                     st.balloons()
+                    st.rerun()
 
 # ==================== PANTALLA 2: CARGAR STOCK ====================
 elif menu == "📚 Cargar Stock Nuevo":
