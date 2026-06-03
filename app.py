@@ -30,6 +30,9 @@ try:
         df_insumos["Costo Total"] = pd.to_numeric(df_insumos["Costo Total"], errors='coerce').fillna(0)
     if not df_ventas.empty:
         df_ventas["Cantidad Cafés"] = pd.to_numeric(df_ventas["Cantidad Cafés"], errors='coerce').fillna(0)
+        df_ventas["Total Cobrado"] = pd.to_numeric(df_ventas["Total Cobrado"], errors='coerce').fillna(0)
+        df_ventas["Costo Total"] = pd.to_numeric(df_ventas["Costo Total"], errors='coerce').fillna(0)
+        df_ventas["Ganancia Real"] = pd.to_numeric(df_ventas["Ganancia Real"], errors='coerce').fillna(0)
 
 except Exception as e:
     st.error(f"Error de conexión: {e}")
@@ -38,7 +41,14 @@ except Exception as e:
 
 # ==================== PANEL LATERAL: RECETA Y CONFIGURACIÓN ====================
 st.sidebar.title("🛸 Comando Lateral")
-menu = st.sidebar.radio("Navegación", ["🛒 Registrar Venta", "📚 Cargar Libro", "📦 Compras de Insumos"])
+
+# NUEVO: Tablero de Mando como la primera opción de la lista
+menu = st.sidebar.radio("Navegación", [
+    "📊 Tablero de Mando", 
+    "🛒 Registrar Venta", 
+    "📚 Cargar Libro", 
+    "📦 Compras de Insumos"
+])
 
 st.sidebar.markdown("---")
 
@@ -73,8 +83,43 @@ posibles_por_vasos = int(stock_actual_vasos // RECETA_VASOS) if RECETA_VASOS > 0
 cafes_maximos_disponibles = min(posibles_por_cafe, posibles_por_vasos)
 
 
+# ==================== PANTALLA 0: TABLERO DE MANDO ====================
+if menu == "📊 Tablero de Mando":
+    st.title("🚀 Vostok — Radar Principal")
+    st.write("Visión general de las métricas de la nave.")
+    st.markdown("---")
+    
+    if df_ventas.empty:
+        st.info("Todavía no hay ventas registradas en la bitácora, capitán. ¡A salir a la calle!")
+    else:
+        # Cálculos de guita
+        ingreso_bruto = df_ventas["Total Cobrado"].sum()
+        costo_recuperacion = df_ventas["Costo Total"].sum()
+        ganancia_neta = df_ventas["Ganancia Real"].sum()
+        
+        st.markdown("### 💰 Estado de Caja Histórico")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Ingreso Bruto", f"$U {ingreso_bruto:,.0f}")
+        col2.metric("Costos (A recuperar)", f"$U {costo_recuperacion:,.0f}")
+        col3.metric("Ganancia Neta (Limpia)", f"$U {ganancia_neta:,.0f}")
+        
+        st.markdown("---")
+        
+        # Cálculos de volumen (Función simple para contar comas y saber cuántos libros se vendieron)
+        def contar_libros(texto):
+            if pd.isna(texto) or str(texto).strip() == "": return 0
+            return len(str(texto).split(","))
+            
+        total_libros_vendidos = sum(contar_libros(row["Libros Vendidos"]) for _, row in df_ventas.iterrows())
+        
+        st.markdown("### 📦 Volumen de Misión")
+        col4, col5 = st.columns(2)
+        col4.metric("☕ Cafés Servidos", f"{total_cafes_vendidos:,.0f} tazas")
+        col5.metric("📚 Libros Despachados", f"{total_libros_vendidos} unidades")
+
+
 # ==================== PANTALLA 1: REGISTRAR VENTA ====================
-if menu == "🛒 Registrar Venta":
+elif menu == "🛒 Registrar Venta":
     st.title("🚀 Vostok — Sistema de Comando")
     st.subheader("📝 Nueva Venta (Modo Rambla)")
     
@@ -95,7 +140,6 @@ if menu == "🛒 Registrar Venta":
             for idx, row in libros_disponibles.iterrows()
         }
     
-    # Aplicamos el truco del contador al ID del casillero
     libros_seleccionados = st.multiselect(
         "Seleccioná los libros (podés escribir el código o título para buscar):",
         options=list(opciones_libros.keys()),
@@ -167,11 +211,9 @@ if menu == "🛒 Registrar Venta":
                 conn.update(worksheet="Libros", data=df_libros)
                 conn.update(worksheet="Ventas", data=df_ventas)
                 
-                # Borramos el caché de Google para que lea lo nuevo
                 del st.session_state.df_libros
                 del st.session_state.df_ventas
                 
-                # Aumentamos el contador: Streamlit se ve obligado a crear casilleros nuevos en blanco
                 st.session_state.form_reset += 1
                 
                 st.toast("¡Venta registrada con éxito!")
