@@ -10,19 +10,18 @@ st.set_page_config(page_title="Vostok Control", page_icon="🚀", layout="center
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Mantenemos los datos en memoria local para fluidez en la calle
+    # Caché en 0m para que no te muestre fantasmas y siempre traiga lo último
     if "df_libros" not in st.session_state:
-        st.session_state.df_libros = conn.read(worksheet="Libros", ttl="5m")
+        st.session_state.df_libros = conn.read(worksheet="Libros", ttl="0m")
     if "df_ventas" not in st.session_state:
-        st.session_state.df_ventas = conn.read(worksheet="Ventas", ttl="5m")
+        st.session_state.df_ventas = conn.read(worksheet="Ventas", ttl="0m")
     if "df_insumos" not in st.session_state:
-        st.session_state.df_insumos = conn.read(worksheet="Insumos", ttl="5m")
+        st.session_state.df_insumos = conn.read(worksheet="Insumos", ttl="0m")
         
     df_libros = st.session_state.df_libros
     df_ventas = st.session_state.df_ventas
     df_insumos = st.session_state.df_insumos
 
-    # SOLUCIÓN DE TIPOS: Forzamos a que las columnas numéricas sean números reales, evitando fallos de Sheets
     if not df_insumos.empty:
         df_insumos["Cantidad Comprada"] = pd.to_numeric(df_insumos["Cantidad Comprada"], errors='coerce').fillna(0)
         df_insumos["Costo Total"] = pd.to_numeric(df_insumos["Costo Total"], errors='coerce').fillna(0)
@@ -40,15 +39,13 @@ menu = st.sidebar.radio("Navegación", ["🛒 Registrar Venta", "📚 Cargar Lib
 
 st.sidebar.markdown("---")
 
-# CONFIGURACIÓN DE LA RECETA Y PRECIO
 with st.sidebar.expander("📐 Configurar Receta y Precio"):
     PRECIO_CAFE_LISTA = st.number_input("Precio de Venta Café ($U):", value=130, step=10)
     st.markdown("**Porciones por taza:**")
     RECETA_CAFE_G = st.number_input("Gramos de Café (g):", value=15, step=1)
     RECETA_VASOS = st.number_input("Cantidad de Vasos:", value=1, step=1)
 
-# ==================== ALGORITMO DE MATEMÁTICA INTERNA (COSTOS Y STOCK) ====================
-# SOLUCIÓN DE TILDES: Buscamos por aproximación ("caf" o "vaso") ignorando mayúsculas y tildes
+# ==================== ALGORITMO DE MATEMÁTICA INTERNA ====================
 def calcular_costo_unitario(df, palabra_clave):
     if df.empty: return 0.0
     filtro = df[df["Insumo"].str.lower().str.contains(palabra_clave, na=False)]
@@ -59,19 +56,15 @@ def calcular_costo_unitario(df, palabra_clave):
 costo_gramo_cafe = calcular_costo_unitario(df_insumos, "caf")
 costo_vaso_unidad = calcular_costo_unitario(df_insumos, "vaso")
 
-# Costo real de una taza según tu receta
 COSTO_INSUMO_CAFE = (RECETA_CAFE_G * costo_gramo_cafe) + (RECETA_VASOS * costo_vaso_unidad)
 
-# Calcular Stock Actual Disponible
 total_cafes_vendidos = df_ventas["Cantidad Cafés"].sum() if not df_ventas.empty else 0
-
 total_cafe_comprado = df_insumos[df_insumos["Insumo"].str.lower().str.contains("caf", na=False)]["Cantidad Comprada"].sum() if not df_insumos.empty else 0
 total_vasos_comprados = df_insumos[df_insumos["Insumo"].str.lower().str.contains("vaso", na=False)]["Cantidad Comprada"].sum() if not df_insumos.empty else 0
 
 stock_actual_cafe_g = max(0.0, total_cafe_comprado - (total_cafes_vendidos * RECETA_CAFE_G))
 stock_actual_vasos = max(0, int(total_vasos_comprados - (total_cafes_vendidos * RECETA_VASOS)))
 
-# ¿Cuántos cafés puedo armar con lo que queda en la nave?
 posibles_por_cafe = int(stock_actual_cafe_g // RECETA_CAFE_G) if RECETA_CAFE_G > 0 else 999
 posibles_por_vasos = int(stock_actual_vasos // RECETA_VASOS) if RECETA_VASOS > 0 else 999
 cafes_maximos_disponibles = min(posibles_por_cafe, posibles_por_vasos)
@@ -82,7 +75,6 @@ if menu == "🛒 Registrar Venta":
     st.title("🚀 Vostok — Sistema de Comando")
     st.subheader("📝 Nueva Venta (Modo Rambla)")
     
-    # Estado de los tanques de insumos para control del capitán
     col_st1, col_st2 = st.columns(2)
     with col_st1:
         st.caption(f"☕ Stock Café: {stock_actual_cafe_g:.0f}g ({posibles_por_cafe} tazas)")
@@ -93,25 +85,25 @@ if menu == "🛒 Registrar Venta":
     
     libros_disponibles = df_libros[df_libros["Estado"] == "🟢 En Órbita"] if not df_libros.empty else pd.DataFrame()
     
-    # Selector de libros
     opciones_libros = {}
     if not libros_disponibles.empty:
-        opciones_libros = {f"{row['Título']} - ${row['Precio Lista']}": row for idx, row in libros_disponibles.iterrows()}
+        opciones_libros = {
+            f"[{row['ID Libro']}] {row['Título']} - ${row['Precio Lista']}": row 
+            for idx, row in libros_disponibles.iterrows()
+        }
     
     libros_seleccionados = st.multiselect(
-        "Seleccioná los libros que se llevan:",
+        "Seleccioná los libros (podés escribir el código o título para buscar):",
         options=list(opciones_libros.keys()),
         key="w_libros"
     )
     
-    # Control de cafés con límite dinámico según stock real
     cant_cafes = st.number_input(
         "Cantidad de cafés entregados:", 
         min_value=0, 
         max_value=max(0, cafes_maximos_disponibles),
         step=1,
-        key="w_cafes",
-        help=f"Máximo disponible por stock de insumos: {cafes_maximos_disponibles} tazas."
+        key="w_cafes"
     )
     
     if cafes_maximos_disponibles == 0:
@@ -119,7 +111,6 @@ if menu == "🛒 Registrar Venta":
 
     st.markdown("---")
     
-    # --- EL ALGORITMO VOSTOK ---
     cant_libros = len(libros_seleccionados)
     cupo_cafes_gratis = cant_libros
     
@@ -140,16 +131,13 @@ if menu == "🛒 Registrar Venta":
     costo_total_operacion = costo_libros_total + costo_cafes_total
     ganancia_real = total_a_cobrar - costo_total_operacion
     
-    # Interfaz limpia para el cliente
     st.subheader("💵 Resumen de Venta")
     st.metric(label="TOTAL A COBRAR", value=f"$U {total_a_cobrar:.0f}")
     st.caption(f"Detalle: {cant_libros} libro(s) y {cant_cafes} café(s) ({cafes_gratis} en promo / {cafes_cobrados} cobrados)")
     
-    # Datos ocultos de Ganancia
     with st.expander("📊 Datos de Comandancia (Oculto al cliente)", expanded=False):
         st.metric(label="Ganancia Real (Limpia)", value=f"$U {ganancia_real:.2f}")
         st.write(f"• Costo real calculado por taza: $U {COSTO_INSUMO_CAFE:.2f}")
-        st.write(f"  *(Café: $U {costo_gramo_cafe*RECETA_CAFE_G:.2f} | Vaso: $U {costo_vaso_unidad*RECETA_VASOS:.2f})*")
     
     st.markdown("---")
     
@@ -172,17 +160,14 @@ if menu == "🛒 Registrar Venta":
                 }
                 df_ventas = pd.concat([df_ventas, pd.DataFrame([nueva_venta])], ignore_index=True)
                 
-                # Subida de datos
                 conn.update(worksheet="Libros", data=df_libros)
                 conn.update(worksheet="Ventas", data=df_ventas)
                 
-                # SOLUCIÓN AL ERROR DE STREAMLIT: Borramos las claves en vez de reasignar con = []
+                # Refrescamos la memoria forzando a cero el formulario de venta
                 del st.session_state.df_libros
                 del st.session_state.df_ventas
-                if "w_libros" in st.session_state:
-                    del st.session_state.w_libros
-                if "w_cafes" in st.session_state:
-                    del st.session_state.w_cafes
+                st.session_state["w_libros"] = []
+                st.session_state["w_cafes"] = 0
                 
                 st.toast("¡Venta registrada con éxito!")
                 st.rerun()
@@ -197,16 +182,18 @@ elif menu == "📚 Cargar Libro":
         titulo = st.text_input("Título del Libro:")
         autor = st.text_input("Autor:")
         genero = st.selectbox("Género:", ["Science Fiction", "Narrativa Local", "Misterio/Suspenso", "Otros"])
-        costo = st.number_input("Costo de Adquisición ($U):", min_value=0.0, step=10.0)
-        precio = st.number_input("Precio de Lista al Público ($U):", min_value=0.0, step=10.0)
+        
+        # SIN CEROS: Cajas vacías con placeholder
+        costo = st.number_input("Costo de Adquisición ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 150")
+        precio = st.number_input("Precio de Lista al Público ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 450")
         
         submit = st.form_submit_button("🛰️ Lanzar libro a Órbita")
         
         if submit:
-            if not id_libro or not titulo:
-                st.error("Faltan datos obligatorios.")
+            if not id_libro or not titulo or costo is None or precio is None:
+                st.error("Faltan datos obligatorios para el lanzamiento (ID, Título, Costo o Precio).")
             elif not df_libros.empty and id_libro in df_libros["ID Libro"].values:
-                st.error("Ese ID ya existe.")
+                st.error("Ese ID ya existe en la base.")
             else:
                 nuevo_registro = {
                     "ID Libro": id_libro, "Título": titulo, "Autor": autor, "Género": genero,
@@ -224,23 +211,28 @@ elif menu == "📦 Compras de Insumos":
     
     with st.form("nuevo_insumo_form", clear_on_submit=True):
         insumo_tipo = st.selectbox("Seleccioná el Insumo:", ["Café", "Vasos"])
-        cantidad = st.number_input("Cantidad comprada (en gramos para café, unidades para vasos):", min_value=1, value=1000)
+        
+        # SIN CEROS
+        cantidad = st.number_input("Cantidad comprada (g o unidades):", min_value=1, step=10, value=None, placeholder="Ej: 1000")
         unidad_texto = "g" if insumo_tipo == "Café" else "unidades"
-        costo_total_compra = st.number_input("Costo Total de la Compra ($U):", min_value=0.0, step=50.0)
+        costo_total_compra = st.number_input("Costo Total de la Compra ($U):", min_value=0.0, step=50.0, value=None, placeholder="Ej: 1200")
         
         submit_insumo = st.form_submit_button("📦 Guardar en bodega")
         
         if submit_insumo:
-            nueva_compra = {
-                "Fecha": datetime.now().strftime("%Y-%m-%d"),
-                "Insumo": insumo_tipo,
-                "Cantidad Comprada": cantidad,
-                "Unidad": unidad_texto,
-                "Costo Total": costo_total_compra
-            }
-            
-            df_insumos = pd.concat([df_insumos, pd.DataFrame([nueva_compra])], ignore_index=True)
-            conn.update(worksheet="Insumos", data=df_insumos)
-            del st.session_state.df_insumos
-            st.success(f"¡Se registraron {cantidad} {unidad_texto} de {insumo_tipo} correctamente!")
-            st.rerun()
+            if cantidad is None or costo_total_compra is None:
+                st.error("Completá todos los campos numéricos, bo.")
+            else:
+                nueva_compra = {
+                    "Fecha": datetime.now().strftime("%Y-%m-%d"),
+                    "Insumo": insumo_tipo,
+                    "Cantidad Comprada": cantidad,
+                    "Unidad": unidad_texto,
+                    "Costo Total": costo_total_compra
+                }
+                
+                df_insumos = pd.concat([df_insumos, pd.DataFrame([nueva_compra])], ignore_index=True)
+                conn.update(worksheet="Insumos", data=df_insumos)
+                del st.session_state.df_insumos
+                st.success(f"¡Se registraron {cantidad} {unidad_texto} de {insumo_tipo} correctamente!")
+                st.rerun()
