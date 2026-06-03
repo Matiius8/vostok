@@ -3,7 +3,16 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# Configuración de la página
+# =============================================================================
+# ⚙️ BÚNKER DE CONFIGURACIÓN VOSTOK (Modificá tus números acá adentro)
+# =============================================================================
+PRECIO_CAFE_LISTA = 130      # Precio de venta al público por cada taza de café ($U)
+RECETA_CAFE_G = 15           # Gramos de café molido que lleva cada taza
+RECETA_VASOS = 1             # Cantidad de vasos que consumís por taza
+VALOR_NAVE = 90000           # Valor estimado de la moto, termos, luces, etc.
+# =============================================================================
+
+# Configuración de la página - Modo Cápsula Espacial
 st.set_page_config(page_title="Vostok Control", page_icon="🚀", layout="centered")
 
 if "form_reset" not in st.session_state:
@@ -45,7 +54,7 @@ except Exception as e:
     st.exception(e)
     st.stop()
 
-# ==================== PANEL LATERAL: RECETA Y CONFIGURACIÓN ====================
+# ==================== PANEL LATERAL: NAVEGACIÓN LIMPIA ====================
 st.sidebar.title("🛸 Comando Lateral")
 menu = st.sidebar.radio("Navegación", [
     "📊 Tablero de Mando", 
@@ -54,16 +63,6 @@ menu = st.sidebar.radio("Navegación", [
     "📦 Compras de Insumos",
     "💸 Tesorería (Gastos y Retiros)"
 ])
-
-st.sidebar.markdown("---")
-
-with st.sidebar.expander("📐 Configurar Receta y Precio"):
-    PRECIO_CAFE_LISTA = st.number_input("Precio de Venta Café ($U):", value=130, step=10)
-    RECETA_CAFE_G = st.number_input("Gramos de Café (g):", value=15, step=1)
-    RECETA_VASOS = st.number_input("Cantidad de Vasos:", value=1, step=1)
-
-with st.sidebar.expander("🚀 Capital Activo Fijo"):
-    VALOR_NAVE = st.number_input("Valor de la Nave (Moto, equipos, etc) $U:", value=0, step=1000)
 
 # ==================== ALGORITMO DE MATEMÁTICA INTERNA ====================
 def calcular_costo_unitario(df, palabra_clave):
@@ -93,12 +92,12 @@ cafes_maximos_disponibles = min(posibles_por_cafe, posibles_por_vasos)
 if menu == "📊 Tablero de Mando":
     st.title("🚀 Vostok — Radar Principal")
     
-    # 💥 INGENIERÍA 1: TERMÓMETRO DE BODEGA
+    # 💥 TERMÓMETRO DE BODEGA
     if stock_actual_cafe_g < 500 or stock_actual_vasos < 15:
         st.warning(f"⚠️ **¡ALERTA DE BODEGA BAJA!** Tanques en nivel crítico. Café restante: {stock_actual_cafe_g:.0f}g | Vasos: {stock_actual_vasos} un.")
         st.markdown("---")
 
-    # 💥 INGENIERÍA 2: FILTRO TEMPORAL INTEGRADO (ARREGLADO CON TO_DATETIME)
+    # 💥 FILTRO TEMPORAL
     st.markdown("### 📅 Período del Radar")
     filtro_tiempo = st.selectbox("Seleccioná qué misión evaluar:", ["Hoy", "Este Mes", "Histórico Total"])
     
@@ -133,7 +132,7 @@ if menu == "📊 Tablero de Mando":
     
     st.markdown("---")
 
-    # 3. GRÁFICO DE VENTAS EVOLUTIVO
+    # GRÁFICO DE VENTAS
     st.markdown("### 📈 Evolución de Ingresos por Día")
     if not df_ventas.empty:
         df_grafico = df_ventas.copy()
@@ -145,7 +144,7 @@ if menu == "📊 Tablero de Mando":
 
     st.markdown("---")
     
-    # 4. TESORERÍA, BALANCE SÓLIDO Y TOTALES REALES
+    # TESORERÍA Y TOTALES NETOS REALES
     st.markdown("### 💼 Caja Real y Patrimonio de la Nave")
     
     ingresos_ventas_totales = df_ventas["Total Cobrado"].sum() if not df_ventas.empty else 0
@@ -171,11 +170,10 @@ if menu == "📊 Tablero de Mando":
     
     st.markdown("---")
     
-    # 📊 SECCIÓN DE MÉTRICAS AVANZADAS (PROMO E INTELIGENCIA)
+    # SECCIÓN DE INTELIGENCIA COMERCIAL
     col_int1, col_int2 = st.columns(2)
     
     with col_int1:
-        # 💥 INGENIERÍA 3: EL TOP 5 Y TOP GÉNEROS
         st.markdown("🏆 **Top 5 Libros Vendidos**")
         if not df_ventas.empty:
             lista_libros_todos = []
@@ -184,11 +182,9 @@ if menu == "📊 Tablero de Mando":
                     lista_libros_todos.extend([b.strip() for b in str(row['Libros Vendidos']).split(",")])
             
             if lista_libros_todos:
-                # Ranking de Títulos
                 df_ranking = pd.DataFrame(lista_libros_todos, columns=["Título"]).value_counts().reset_index(name="Ventas")
                 st.dataframe(df_ranking.head(5), hide_index=True, use_container_width=True)
                 
-                # Novedad: Ranking de Géneros
                 st.markdown("🎭 **Géneros más populares**")
                 dic_generos = dict(zip(df_libros["Título"], df_libros["Género"]))
                 lista_generos = [dic_generos.get(t, "Desconocido") for t in lista_libros_todos]
@@ -200,7 +196,6 @@ if menu == "📊 Tablero de Mando":
             st.caption("Sin ventas aún.")
             
     with col_int2:
-        # 💥 INGENIERÍA 4: TASA DE IMPACTO DEL CAFÉ
         st.markdown("🎯 **Efectividad del Combo Café**")
         if not df_ventas.empty:
             total_cafes_hist = df_ventas["Cantidad Cafés"].sum()
@@ -223,7 +218,6 @@ if menu == "📊 Tablero de Mando":
 
     st.markdown("---")
     
-    # 💥 INGENIERÍA 5: BITÁCORA DE LAS ÚLTIMAS 5 MISIONES
     st.markdown("📝 **Bitácora de las Últimas 5 Ventas**")
     if not df_ventas.empty:
         st.dataframe(df_ventas.iloc[::-1].head(5), hide_index=True, use_container_width=True)
