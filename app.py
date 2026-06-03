@@ -63,7 +63,7 @@ with st.sidebar.expander("📐 Configurar Receta y Precio"):
     RECETA_VASOS = st.number_input("Cantidad de Vasos:", value=1, step=1)
 
 with st.sidebar.expander("🚀 Capital Activo Fijo"):
-    VALOR_NAVE = st.number_input("Valor de la Nave (Moto, equipos, etc) $U:", value=0, step=1000, help="Esto suma directo a tu patrimonio total.")
+    VALOR_NAVE = st.number_input("Valor de la Nave (Moto, equipos, etc) $U:", value=0, step=1000)
 
 # ==================== ALGORITMO DE MATEMÁTICA INTERNA ====================
 def calcular_costo_unitario(df, palabra_clave):
@@ -92,58 +92,72 @@ cafes_maximos_disponibles = min(posibles_por_cafe, posibles_por_vasos)
 # ==================== PANTALLA 0: TABLERO DE MANDO ====================
 if menu == "📊 Tablero de Mando":
     st.title("🚀 Vostok — Radar Principal")
-    st.write("Finanzas reales al estilo Vostok.")
+    
+    # 💥 INGENIERÍA 1: TERMÓMETRO DE BODEGA (ALERTAS DE REABASTECIMIENTO)
+    if stock_actual_cafe_g < 500 or stock_actual_vasos < 15:
+        st.warning(f"⚠️ **¡ALERTA DE BODEGA BAJA!** Tanques en nivel crítico. Café restante: {stock_actual_cafe_g:.0f}g | Vasos: {stock_actual_vasos} un.")
+        st.markdown("---")
+
+    # 💥 INGENIERÍA 2: FILTRO TEMPORAL INTEGRADO
+    st.markdown("### 📅 Período del Radar")
+    filtro_tiempo = st.selectbox("Seleccioná qué misión evaluar:", ["Hoy", "Este Mes", "Histórico Total"])
+    
+    hoy_str = datetime.now().strftime("%Y-%m-%d")
+    mes_str = datetime.now().strftime("%Y-%m")
+    
+    if filtro_tiempo == "Hoy":
+        df_ventas_filt = df_ventas[df_ventas["Fecha"].str.startswith(hoy_str, na=False)] if not df_ventas.empty else pd.DataFrame()
+        df_gastos_filt = df_gastos[df_gastos["Fecha"].str.startswith(hoy_str, na=False)] if not df_gastos.empty else pd.DataFrame()
+    elif filtro_tiempo == "Este Mes":
+        df_ventas_filt = df_ventas[df_ventas["Fecha"].str.startswith(mes_str, na=False)] if not df_ventas.empty else pd.DataFrame()
+        df_gastos_filt = df_gastos[df_gastos["Fecha"].str.startswith(mes_str, na=False)] if not df_gastos.empty else pd.DataFrame()
+    else:
+        df_ventas_filt = df_ventas
+        df_gastos_filt = df_gastos
+
     st.markdown("---")
     
-    # 1. MÉTRICAS DIARIAS
-    hoy_str = datetime.now().strftime("%Y-%m-%d")
-    df_hoy = df_ventas[df_ventas["Fecha"].str.startswith(hoy_str, na=False)] if not df_ventas.empty else pd.DataFrame()
+    # Rendimiento según el período seleccionado
+    st.markdown(f"### 🌊 Rendimiento Financiero — {filtro_tiempo}")
+    col_f1, col_f2, col_f3 = st.columns(3)
     
-    st.markdown("### 🌊 Actividad de Hoy")
-    col_h1, col_h2, col_h3 = st.columns(3)
-    if not df_hoy.empty:
-        col_h1.metric("Ingreso Hoy", f"$U {df_hoy['Total Cobrado'].sum():,.0f}")
-        col_h2.metric("Ganancia Limpia Hoy", f"$U {df_hoy['Ganancia Real'].sum():,.0f}")
-        col_h3.metric("Cafés Servidos", f"{df_hoy['Cantidad Cafés'].sum():.0f} tazas")
-    else:
-        col_h1.metric("Ingreso Hoy", "$U 0")
-        col_h2.metric("Ganancia Limpia Hoy", "$U 0")
-        col_h3.metric("Cafés Servidos", "0 tazas")
-        
+    ingresos_periodo = df_ventas_filt["Total Cobrado"].sum() if not df_ventas_filt.empty else 0
+    costos_periodo = df_ventas_filt["Costo Total"].sum() if not df_ventas_filt.empty else 0
+    gastos_op_periodo = df_gastos_filt[df_gastos_filt["Tipo"].str.contains("Gasto Operativo")]["Monto"].sum() if not df_gastos_filt.empty else 0
+    
+    ganancia_neta_periodo = ingresos_periodo - costos_periodo - gastos_op_periodo
+    cafes_periodo = df_ventas_filt["Cantidad Cafés"].sum() if not df_ventas_filt.empty else 0
+    
+    col_f1.metric("Ingresos Período", f"$U {ingresos_periodo:,.0f}")
+    col_f2.metric("Ganancia Limpia", f"$U {ganancia_neta_periodo:,.0f}")
+    col_f3.metric("Cafés Servidos", f"{cafes_periodo:.0f} tazas")
+    
     st.markdown("---")
 
-    # 2. GRÁFICO DE VENTAS
-    st.markdown("### 📈 Evolución Diaria")
+    # 3. GRÁFICO DE VENTAS EVOLUTIVO
+    st.markdown("### 📈 Evolución de Ingresos por Día")
     if not df_ventas.empty:
         df_grafico = df_ventas.copy()
         df_grafico["Día"] = df_grafico["Fecha"].str[:10]
         ventas_por_dia = df_grafico.groupby("Día")["Total Cobrado"].sum()
         st.bar_chart(ventas_por_dia, color="#FF4B4B")
     else:
-        st.info("Sin ventas para graficar.")
+        st.info("Sin datos para graficar.")
 
     st.markdown("---")
     
-    # 3. LÓGICA FINANCIERA REALISTA
-    st.markdown("### 💼 Tesorería y Patrimonio")
+    # 4. TESORERÍA, BALANCE SÓLIDO Y TOTALES REALES (Métricas de la billetera física actual)
+    st.markdown("### 💼 Caja Real y Patrimonio de la Nave")
     
-    # Sumarizadores de Tesorería
-    ingresos_ventas = df_ventas["Total Cobrado"].sum() if not df_ventas.empty else 0
-    costos_ventas_hist = df_ventas["Costo Total"].sum() if not df_ventas.empty else 0
-    gastos_op = df_gastos[df_gastos["Tipo"].str.contains("Gasto Operativo")]["Monto"].sum() if not df_gastos.empty else 0
-    retiros = df_gastos[df_gastos["Tipo"].str.contains("Retiro")]["Monto"].sum() if not df_gastos.empty else 0
-    aportes = df_gastos[df_gastos["Tipo"].str.contains("Aporte")]["Monto"].sum() if not df_gastos.empty else 0
-    
+    ingresos_ventas_totales = df_ventas["Total Cobrado"].sum() if not df_ventas.empty else 0
+    gastos_op_totales = df_gastos[df_gastos["Tipo"].str.contains("Gasto Operativo")]["Monto"].sum() if not df_gastos.empty else 0
+    retiros_totales = df_gastos[df_gastos["Tipo"].str.contains("Retiro")]["Monto"].sum() if not df_gastos.empty else 0
+    aportes_totales = df_gastos[df_gastos["Tipo"].str.contains("Aporte")]["Monto"].sum() if not df_gastos.empty else 0
     inversion_insumos = df_insumos["Costo Total"].sum() if not df_insumos.empty else 0
     inversion_libros = df_libros["Costo Adquisición"].sum() if not df_libros.empty else 0
     
-    # EFECTIVO FÍSICO: (Aportes + Ventas) - (Todas las compras + Gastos + Retiros)
-    efectivo_caja = (aportes + ingresos_ventas) - (inversion_insumos + inversion_libros + gastos_op + retiros)
+    efectivo_caja = (aportes_totales + ingresos_ventas_totales) - (inversion_insumos + inversion_libros + gastos_op_totales + retiros_totales)
     
-    # GANANCIA NETA DEL NEGOCIO: Ingresos por Ventas - Costo de lo Vendido - Gastos Operativos
-    ganancia_neta_negocio = ingresos_ventas - costos_ventas_hist - gastos_op
-    
-    # CAPITAL INMOVILIZADO
     capital_libros = df_libros[df_libros["Estado"] == "🟢 En Órbita"]["Costo Adquisición"].sum() if not df_libros.empty else 0
     capital_cafe = stock_actual_cafe_g * costo_gramo_cafe
     capital_vasos = stock_actual_vasos * costo_vaso_unidad
@@ -151,15 +165,63 @@ if menu == "📊 Tablero de Mando":
     
     patrimonio_total = efectivo_caja + capital_stock + VALOR_NAVE
     
-    col_t1, col_t2 = st.columns(2)
-    col_t1.metric("💵 Efectivo en Caja", f"$U {efectivo_caja:,.0f}", help="La plata física que deberías tener en mano (o cuenta).")
-    col_t2.metric("📈 Ganancia Neta Global", f"$U {ganancia_neta_negocio:,.0f}", help="Rentabilidad real de la empresa (Ventas menos costos y gastos operativos).")
+    col_t1, col_t2, col_t3 = st.columns(3)
+    col_t1.metric("💵 Billetera Física (Efectivo)", f"$U {efectivo_caja:,.0f}")
+    col_t2.metric("📦 Stock (Costo)", f"$U {capital_stock:,.0f}")
+    col_t3.metric("🏆 PATRIMONIO NETO", f"$U {patrimonio_total:,.0f}")
     
-    st.markdown("#### Desglose de Capital")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Stock Físico", f"$U {capital_stock:,.0f}")
-    c2.metric("La Nave", f"$U {VALOR_NAVE:,.0f}")
-    c3.metric("🏆 PATRIMONIO TOTAL", f"$U {patrimonio_total:,.0f}")
+    st.markdown("---")
+    
+    # 📊 SECCIÓN DE MÉTRICAS AVANZADAS (PROMO E INTELIGENCIA)
+    col_int1, col_int2 = st.columns(2)
+    
+    with col_int1:
+        # 💥 INGENIERÍA 3: EL TOP 5 DE LA ÓRBITA (RANKING)
+        st.markdown("🏆 **Top 5 Libros Vendidos**")
+        if not df_ventas.empty:
+            lista_libros_todos = []
+            for _, row in df_ventas.iterrows():
+                if pd.notna(row["Libros Vendidos"]) and str(row["Libros Vendidos"]).strip() != "":
+                    lista_libros_todos.extend([b.strip() for b in str(row['Libros Vendidos']).split(",")])
+            if lista_libros_todos:
+                df_ranking = pd.DataFrame(lista_libros_todos, columns=["Título"]).value_counts().reset_index(name="Ventas")
+                st.dataframe(df_ranking.head(5), hide_index=True, use_container_width=True)
+            else:
+                st.caption("Sin libros vendidos para rankear.")
+        else:
+            st.caption("Sin ventas aún.")
+            
+    with col_int2:
+        # 💥 INGENIERÍA 4: TASA DE IMPACTO DEL CAFÉ (MÁRKETING DE COMBOS)
+        st.markdown("🎯 **Efectividad del Combo Café**")
+        if not df_ventas.empty:
+            total_cafes_hist = df_ventas["Cantidad Cafés"].sum()
+            total_gratis_hist = 0
+            for _, row in df_ventas.iterrows():
+                cant_l = len(str(row["Libros Vendidos"]).split(",")) if pd.notna(row["Libros Vendidos"]) and str(row["Libros Vendidos"]).strip() != "" else 0
+                cant_c = row["Cantidad Cafés"]
+                total_gratis_hist += min(cant_l, cant_c)
+            total_cobrados_hist = max(0, total_cafes_hist - total_gratis_hist)
+            
+            if total_cafes_hist > 0:
+                pct_gratis = (total_gratis_hist / total_cafes_hist) * 100
+                st.write(f"• **Total servido:** {total_cafes_hist:.0f} tazas")
+                st.write(f"• 🎁 **Cafés de Regalo (Combo):** {total_gratis_hist:.0f} ({pct_gratis:.1f}%)")
+                st.write(f"• 💵 **Cafés Cobrados Solos:** {total_cobrados_hist:.0f} ({100 - pct_gratis:.1f}%)")
+            else:
+                st.caption("No se sirvieron cafés todavía.")
+        else:
+            st.caption("Sin datos históricos.")
+
+    st.markdown("---")
+    
+    # 💥 INGENIERÍA 5: BITÁCORA DE LAS ÚLTIMAS 5 MISIONES
+    st.markdown("📝 **Bitácora de las Últimas 5 Ventas**")
+    if not df_ventas.empty:
+        # Mostramos las últimas ventas dadas vuelta (la más nueva primero)
+        st.dataframe(df_ventas.iloc[::-1].head(5), hide_index=True, use_container_width=True)
+    else:
+        st.caption("Bitácora vacía por ahora.")
 
 
 # ==================== PANTALLA 1: REGISTRAR VENTA ====================
