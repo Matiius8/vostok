@@ -20,11 +20,15 @@ try:
         st.session_state.df_ventas = conn.read(worksheet="Ventas", ttl="0m")
     if "df_insumos" not in st.session_state:
         st.session_state.df_insumos = conn.read(worksheet="Insumos", ttl="0m")
+    if "df_gastos" not in st.session_state:
+        st.session_state.df_gastos = conn.read(worksheet="Gastos", ttl="0m")
         
     df_libros = st.session_state.df_libros
     df_ventas = st.session_state.df_ventas
     df_insumos = st.session_state.df_insumos
+    df_gastos = st.session_state.df_gastos
 
+    # Forzado de tipos numéricos
     if not df_libros.empty:
         df_libros["Costo Adquisición"] = pd.to_numeric(df_libros["Costo Adquisición"], errors='coerce').fillna(0)
     if not df_insumos.empty:
@@ -35,6 +39,8 @@ try:
         df_ventas["Total Cobrado"] = pd.to_numeric(df_ventas["Total Cobrado"], errors='coerce').fillna(0)
         df_ventas["Costo Total"] = pd.to_numeric(df_ventas["Costo Total"], errors='coerce').fillna(0)
         df_ventas["Ganancia Real"] = pd.to_numeric(df_ventas["Ganancia Real"], errors='coerce').fillna(0)
+    if not df_gastos.empty:
+        df_gastos["Monto"] = pd.to_numeric(df_gastos["Monto"], errors='coerce').fillna(0)
 
 except Exception as e:
     st.error(f"Error de conexión: {e}")
@@ -47,7 +53,8 @@ menu = st.sidebar.radio("Navegación", [
     "📊 Tablero de Mando", 
     "🛒 Registrar Venta", 
     "📚 Cargar Libro", 
-    "📦 Compras de Insumos"
+    "📦 Compras de Insumos",
+    "💸 Tesorería (Gastos y Retiros)"
 ])
 
 st.sidebar.markdown("---")
@@ -89,11 +96,11 @@ if menu == "📊 Tablero de Mando":
     st.write("Visión general financiera y operativa en tiempo real.")
     st.markdown("---")
     
-    # 1. MÉTRICAS DIARIAS (FILTRADO POR HOY)
+    # 1. MÉTRICAS DIARIAS
     hoy_str = datetime.now().strftime("%Y-%m-%d")
     df_hoy = df_ventas[df_ventas["Fecha"].str.startswith(hoy_str, na=False)] if not df_ventas.empty else pd.DataFrame()
     
-    st.markdown("### 🌊 Actividad de Hoy en la Rambla")
+    st.markdown("### 🌊 Actividad de Hoy")
     col_h1, col_h2, col_h3 = st.columns(3)
     
     if not df_hoy.empty:
@@ -109,33 +116,49 @@ if menu == "📊 Tablero de Mando":
         col_h3.metric("Cafés Servidos Hoy", "0 tazas")
         
     st.markdown("---")
+
+    # 2. GRÁFICO DE VENTAS (Reemplaza al histórico bruto)
+    st.markdown("### 📈 Tendencia de Ingresos")
+    if not df_ventas.empty:
+        df_grafico = df_ventas.copy()
+        # Extraemos solo el día para agrupar
+        df_grafico["Día"] = df_grafico["Fecha"].str[:10]
+        ventas_por_dia = df_grafico.groupby("Día")["Total Cobrado"].sum()
+        st.bar_chart(ventas_por_dia, color="#FF4B4B")
+    else:
+        st.info("No hay datos suficientes para graficar todavía.")
+
+    st.markdown("---")
     
-    # 2. METRICAS DE BILLETERA Y STOCK FÍSICO (NUEVA LÓGICA)
-    st.markdown("### 💰 Finanzas y Capital")
+    # 3. METRICAS DE BILLETERA Y STOCK FÍSICO (CON GASTOS)
+    st.markdown("### 💰 Capital y Tesorería")
     
-    # Capital Inmovilizado: Costo de lo que está físicamente sin vender
     capital_libros = df_libros[df_libros["Estado"] == "🟢 En Órbita"]["Costo Adquisición"].sum() if not df_libros.empty else 0
     capital_cafe = stock_actual_cafe_g * costo_gramo_cafe
     capital_vasos = stock_actual_vasos * costo_vaso_unidad
     capital_inmovilizado_total = capital_libros + capital_cafe + capital_vasos
 
-    # Flujo de Caja Billetera: (Todo lo cobrado) - (Todo lo gastado históricamente en libros e insumos)
+    # Flujo histórico
     ingreso_bruto_total = df_ventas["Total Cobrado"].sum() if not df_ventas.empty else 0
     gasto_total_insumos = df_insumos["Costo Total"].sum() if not df_insumos.empty else 0
     gasto_total_libros = df_libros["Costo Adquisición"].sum() if not df_libros.empty else 0
-    billetera_efectivo = ingreso_bruto_total - (gasto_total_insumos + gasto_total_libros)
     
-    col_t1, col_t2, col_t3 = st.columns(3)
-    col_t1.metric("Ventas Históricas (Bruto)", f"$U {ingreso_bruto_total:,.0f}")
-    col_t2.metric("Capital Inmovilizado (Stock)", f"$U {capital_inmovilizado_total:,.0f}", help="El valor al costo de los libros disponibles y los insumos que te quedan sin usar.")
-    col_t3.metric("Billetera Real (Liquidez)", f"$U {billetera_efectivo:,.0f}", help="Plata en efectivo: Ingresos menos todo lo que invertiste en la historia del proyecto.")
+    # Sumar Gastos operativos y Retiros
+    total_gastos_op = df_gastos[df_gastos["Tipo"] == "Gasto Operativo"]["Monto"].sum() if not df_gastos.empty else 0
+    total_retiros = df_gastos[df_gastos["Tipo"] == "Retiro de Gerencia"]["Monto"].sum() if not df_gastos.empty else 0
     
-    st.markdown("---")
+    # Billetera real = Entradas - (Compras de stock + Gastos de la nave + Retiros del jefe)
+    billetera_efectivo = ingreso_bruto_total - (gasto_total_insumos + gasto_total_libros + total_gastos_op + total_retiros)
     
-    with st.expander("📊 Rendimiento Contable Pura (Margen de lo vendido)"):
-        ganancia_contable_total = df_ventas["Ganancia Real"].sum() if not df_ventas.empty else 0
-        st.metric("Ganancia Neta Teórica", f"$U {ganancia_contable_total:,.0f}")
-        st.caption("Esta métrica refleja la ganancia solo de las ventas realizadas, ignorando el gasto de los libros que aún no vendiste.")
+    col_t1, col_t2 = st.columns(2)
+    col_t1.metric("Capital Inmovilizado (Stock Físico)", f"$U {capital_inmovilizado_total:,.0f}")
+    col_t2.metric("Plata Real en Billetera (Efectivo)", f"$U {billetera_efectivo:,.0f}")
+    
+    with st.expander("📋 Ver detalle de la billetera"):
+        st.write(f"🟢 **Entradas Totales:** $U {ingreso_bruto_total:,.0f}")
+        st.write(f"🔴 **Inversión en Stock:** -$U {gasto_total_insumos + gasto_total_libros:,.0f}")
+        st.write(f"🔴 **Gastos de Operación:** -$U {total_gastos_op:,.0f}")
+        st.write(f"🔴 **Retiros de Gerencia:** -$U {total_retiros:,.0f}")
 
 
 # ==================== PANTALLA 1: REGISTRAR VENTA ====================
@@ -161,7 +184,7 @@ elif menu == "🛒 Registrar Venta":
         }
     
     libros_seleccionados = st.multiselect(
-        "Seleccioná los libros (podés escribir el código, título o autor para buscar):",
+        "Seleccioná los libros (podés escribir el código, título o autor):",
         options=list(opciones_libros.keys()),
         key=f"w_libros_{st.session_state.form_reset}"
     )
@@ -233,7 +256,6 @@ elif menu == "🛒 Registrar Venta":
                 
                 del st.session_state.df_libros
                 del st.session_state.df_ventas
-                
                 st.session_state.form_reset += 1
                 
                 st.toast("¡Venta registrada con éxito!")
@@ -250,7 +272,6 @@ elif menu == "📚 Cargar Libro":
         autor = st.text_input("Autor:")
         genero = st.selectbox("Género:", ["Science Fiction", "Narrativa Local", "Misterio/Suspenso", "Otros"])
         
-        # NUEVO: Selector de ejemplares múltiples
         cantidad_ejemplares = st.number_input("Cantidad de ejemplares comprados:", min_value=1, step=1, value=1)
         
         costo = st.number_input("Costo de Adquisición C/U ($U):", min_value=0.0, step=10.0, value=None, placeholder="Ej: 150")
@@ -259,7 +280,6 @@ elif menu == "📚 Cargar Libro":
         submit = st.form_submit_button("🛰️ Lanzar a Órbita")
         
         if submit:
-            # Chequeamos los IDs que se van a crear
             ids_a_crear = [id_libro] if cantidad_ejemplares == 1 else [f"{id_libro}-{i+1}" for i in range(int(cantidad_ejemplares))]
             
             if not id_libro or not titulo or costo is None or precio is None:
@@ -310,4 +330,38 @@ elif menu == "📦 Compras de Insumos":
                 conn.update(worksheet="Insumos", data=df_insumos)
                 del st.session_state.df_insumos
                 st.success(f"¡Se registraron {cantidad} {unidad_texto} de {insumo_tipo} correctamente!")
+                st.rerun()
+
+# ==================== PANTALLA 4: TESORERÍA (NUEVO) ====================
+elif menu == "💸 Tesorería (Gastos y Retiros)":
+    st.title("🚀 Vostok — Tesorería")
+    st.write("Registrá los gastos operativos de la nave o los retiros para uso personal.")
+    
+    with st.form("nuevo_gasto_form", clear_on_submit=True):
+        tipo_movimiento = st.radio("Tipo de Salida:", ["Gasto Operativo", "Retiro de Gerencia"])
+        
+        if tipo_movimiento == "Gasto Operativo":
+            descripcion = st.text_input("¿En qué se gastó? (Ej: Nafta, Patente, Agua):")
+        else:
+            descripcion = st.text_input("Motivo del retiro (Opcional, ej: 'Salida el finde'):")
+            
+        monto_salida = st.number_input("Monto total a descontar ($U):", min_value=0.0, step=100.0, value=None, placeholder="Ej: 1500")
+        
+        submit_gasto = st.form_submit_button("💸 Registrar Salida")
+        
+        if submit_gasto:
+            if monto_salida is None or (tipo_movimiento == "Gasto Operativo" and not descripcion):
+                st.error("El monto es obligatorio. Si es un gasto, la descripción también, bo.")
+            else:
+                nuevo_movimiento = {
+                    "Fecha": datetime.now().strftime("%Y-%m-%d"),
+                    "Tipo": tipo_movimiento,
+                    "Descripción": descripcion if descripcion else "Retiro de utilidades",
+                    "Monto": monto_salida
+                }
+                
+                df_gastos = pd.concat([df_gastos, pd.DataFrame([nuevo_movimiento])], ignore_index=True)
+                conn.update(worksheet="Gastos", data=df_gastos)
+                del st.session_state.df_gastos
+                st.success(f"¡Salida de $U {monto_salida} registrada correctamente en la caja!")
                 st.rerun()
