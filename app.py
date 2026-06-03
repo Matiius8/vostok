@@ -21,9 +21,17 @@ try:
     df_libros = st.session_state.df_libros
     df_ventas = st.session_state.df_ventas
     df_insumos = st.session_state.df_insumos
+
+    # SOLUCIÓN DE TIPOS: Forzamos a que las columnas numéricas sean números reales, evitando fallos de Sheets
+    if not df_insumos.empty:
+        df_insumos["Cantidad Comprada"] = pd.to_numeric(df_insumos["Cantidad Comprada"], errors='coerce').fillna(0)
+        df_insumos["Costo Total"] = pd.to_numeric(df_insumos["Costo Total"], errors='coerce').fillna(0)
+    if not df_ventas.empty:
+        df_ventas["Cantidad Cafés"] = pd.to_numeric(df_ventas["Cantidad Cafés"], errors='coerce').fillna(0)
+
 except Exception as e:
     st.error(f"Error de conexión: {e}")
-    st.exception(e)  # CORREGIDO: Chau comilla extra
+    st.exception(e)
     st.stop()
 
 # ==================== PANEL LATERAL: RECETA Y CONFIGURACIÓN ====================
@@ -40,29 +48,30 @@ with st.sidebar.expander("📐 Configurar Receta y Precio"):
     RECETA_VASOS = st.number_input("Cantidad de Vasos:", value=1, step=1)
 
 # ==================== ALGORITMO DE MATEMÁTICA INTERNA (COSTOS Y STOCK) ====================
-# 1. Calcular costos unitarios promedio ponderados de tus compras reales
-def calcular_costo_unitario(df, nombre_insumo):
-    filtro = df[df["Insumo"].str.lower() == nombre_insumo.lower()] if not df.empty else pd.DataFrame()
-    total_cant = filtro["Cantidad Comprada"].sum() if not filtro.empty else 0
-    total_costo = filtro["Costo Total"].sum() if not filtro.empty else 0
+# SOLUCIÓN DE TILDES: Buscamos por aproximación ("caf" o "vaso") ignorando mayúsculas y tildes
+def calcular_costo_unitario(df, palabra_clave):
+    if df.empty: return 0.0
+    filtro = df[df["Insumo"].str.lower().str.contains(palabra_clave, na=False)]
+    total_cant = filtro["Cantidad Comprada"].sum()
+    total_costo = filtro["Costo Total"].sum()
     return total_costo / total_cant if total_cant > 0 else 0.0
 
-costo_gramo_cafe = calcular_costo_unitario(df_insumos, "Café")
-costo_vaso_unidad = calcular_costo_unitario(df_insumos, "Vasos")
+costo_gramo_cafe = calcular_costo_unitario(df_insumos, "caf")
+costo_vaso_unidad = calcular_costo_unitario(df_insumos, "vaso")
 
 # Costo real de una taza según tu receta
 COSTO_INSUMO_CAFE = (RECETA_CAFE_G * costo_gramo_cafe) + (RECETA_VASOS * costo_vaso_unidad)
 
-# 2. Calcular Stock Actual Disponible (Comprado histórico - Consumido histórico)
+# Calcular Stock Actual Disponible
 total_cafes_vendidos = df_ventas["Cantidad Cafés"].sum() if not df_ventas.empty else 0
 
-total_cafe_comprado = df_insumos[df_insumos["Insumo"].str.lower() == "café"]["Cantidad Comprada"].sum() if not df_insumos.empty else 0
-total_vasos_comprados = df_insumos[df_insumos["Insumo"].str.lower() == "vasos"]["Cantidad Comprada"].sum() if not df_insumos.empty else 0
+total_cafe_comprado = df_insumos[df_insumos["Insumo"].str.lower().str.contains("caf", na=False)]["Cantidad Comprada"].sum() if not df_insumos.empty else 0
+total_vasos_comprados = df_insumos[df_insumos["Insumo"].str.lower().str.contains("vaso", na=False)]["Cantidad Comprada"].sum() if not df_insumos.empty else 0
 
 stock_actual_cafe_g = max(0.0, total_cafe_comprado - (total_cafes_vendidos * RECETA_CAFE_G))
 stock_actual_vasos = max(0, int(total_vasos_comprados - (total_cafes_vendidos * RECETA_VASOS)))
 
-# ¿Cuántos cafés puedo armar con lo que me queda en la nave?
+# ¿Cuántos cafés puedo armar con lo que queda en la nave?
 posibles_por_cafe = int(stock_actual_cafe_g // RECETA_CAFE_G) if RECETA_CAFE_G > 0 else 999
 posibles_por_vasos = int(stock_actual_vasos // RECETA_VASOS) if RECETA_VASOS > 0 else 999
 cafes_maximos_disponibles = min(posibles_por_cafe, posibles_por_vasos)
@@ -167,11 +176,13 @@ if menu == "🛒 Registrar Venta":
                 conn.update(worksheet="Libros", data=df_libros)
                 conn.update(worksheet="Ventas", data=df_ventas)
                 
-                # Reseteo de memoria
+                # SOLUCIÓN AL ERROR DE STREAMLIT: Borramos las claves en vez de reasignar con = []
                 del st.session_state.df_libros
                 del st.session_state.df_ventas
-                st.session_state.w_libros = []
-                st.session_state.w_cafes = 0
+                if "w_libros" in st.session_state:
+                    del st.session_state.w_libros
+                if "w_cafes" in st.session_state:
+                    del st.session_state.w_cafes
                 
                 st.toast("¡Venta registrada con éxito!")
                 st.rerun()
