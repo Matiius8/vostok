@@ -223,11 +223,9 @@ elif menu == "📦 Compras de Insumos":
                 "Fecha": datetime.now().strftime("%Y-%m-%d"),
                 "Insumo": insumo_tipo,
                 "Cantidad Comprada": cantidad,
-                "Unidad": intensity_texto = "g" if insumo_tipo == "Café" else "unidades",
+                "Unidad": unidad_texto,
                 "Costo Total": costo_total_compra
             }
-            # Evitamos errores de formato de strings en la asignación directa de unidades
-            nueva_compra["Unidad"] = unidad_texto
             
             df_insumos = pd.concat([df_insumos, pd.DataFrame([nueva_compra])], ignore_index=True)
             conn.update(worksheet="Insumos", data=df_insumos)
